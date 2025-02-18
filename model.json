@@ -1,0 +1,46 @@
+{
+  "modelTopology": {
+    "keras_version": "2.3.0",
+    "backend": "tensorflow",
+    "signature": {
+      "inputs": {
+        "input_tensor": {
+          "dtype": "float32",
+          "shape": [1, 256, 256, 3]
+        }
+      },
+      "outputs": {
+        "output_tensor": {
+          "dtype": "float32",
+          "shape": [1, 256, 256, 3]
+        }
+      }
+    },
+    "nodes": [
+      {
+        "name": "input_tensor",
+        "type": "Input",
+        "config": {
+          "dtype": "float32",
+          "batch_input_shape": [null, 256, 256, 3]
+        }
+      }
+      // ... other layers based on your architecture
+    ]
+  },
+  "weightsManifest": [
+    {
+      "paths": [
+        "model_weights.bin" // Change with the actual weights file name or path
+      ],
+      "weights": [
+        {
+          "name": "dense/kernel",
+          "dtype": "float32",
+          "shape": [256, 256]
+        }
+        // ... additional weight entries depending on your model
+      ]
+    }
+  ]
+}

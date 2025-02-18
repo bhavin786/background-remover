@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { Upload, Image as ImageIcon, Wand2, Download, Layers, Settings2 } from 'lucide-react';
-import { useDropzone } from 'react-dropzone';
-import toast from 'react-hot-toast';
+import { useState } from "react";
+import { useDropzone } from "react-dropzone";
+import { loadGraphModel } from "@tensorflow/tfjs-converter"; // Ensure this is imported
+import * as tf from "@tensorflow/tfjs";
+import toast from "react-hot-toast";
+import { Wand2, Download, ImageIcon, Layers, Settings2 } from "lucide-react";
 
 function App() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -10,8 +12,9 @@ function App() {
   const onDrop = (acceptedFiles: File[]) => {
     if (acceptedFiles.length > 0) {
       const file = acceptedFiles[0];
-      if (file.size > 10 * 1024 * 1024) { // 10MB limit
-        toast.error('File size should be less than 10MB');
+      if (file.size > 10 * 1024 * 1024) {
+        // 10MB limit
+        toast.error("File size should be less than 10MB");
         return;
       }
       const reader = new FileReader();
@@ -25,18 +28,56 @@ function App() {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
-      'image/*': ['.png', '.jpg', '.jpeg']
+      "image/*": [".png", ".jpg", ".jpeg"],
     },
-    maxFiles: 1
+    maxFiles: 1,
   });
 
   const handleRemoveBackground = async () => {
+    if (!selectedImage) return;
+
     setIsProcessing(true);
-    // TODO: Implement background removal logic
-    setTimeout(() => {
+
+    try {
+      const model = await loadGraphModel("/model.json"); // Adjusted path to model.json
+
+      const image = new Image();
+      image.src = selectedImage;
+      await new Promise((resolve) => {
+        image.onload = resolve;
+      });
+
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      canvas.width = image.width;
+      canvas.height = image.height;
+      ctx.drawImage(image, 0, 0);
+
+      const inputTensor = tf.browser
+        .fromPixels(canvas)
+        .resizeBilinear([256, 256])
+        .expandDims(0)
+        .toFloat()
+        .div(255);
+      const result = model.predict(inputTensor);
+
+      const outputCanvas = document.createElement("canvas");
+      const outputCtx = outputCanvas.getContext("2d");
+      outputCanvas.width = 256;
+      outputCanvas.height = 256;
+
+      const mask = await result.squeeze().mul(255).toInt();
+      tf.browser.toPixels(mask, outputCtx);
+
+      const url = outputCanvas.toDataURL();
+      setSelectedImage(url); // Set the processed background-removed image
+
       setIsProcessing(false);
-      toast.error('Background removal API not implemented yet');
-    }, 1000);
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to remove background");
+      setIsProcessing(false);
+    }
   };
 
   return (
@@ -47,7 +88,9 @@ function App() {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <Wand2 className="h-8 w-8 text-purple-600" />
-              <h1 className="text-2xl font-bold text-gray-900">Background Remover</h1>
+              <h1 className="text-2xl font-bold text-gray-900">
+                Background Remover
+              </h1>
             </div>
             <button className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition">
               Sign In
@@ -56,178 +99,42 @@ function App() {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Left Column - Upload and Preview */}
-          <div className="space-y-6">
-            <div
-              {...getRootProps()}
-              className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition
-                ${isDragActive ? 'border-purple-600 bg-purple-50' : 'border-gray-300 hover:border-purple-400'}`}
+      {/* Dropzone and processing tools */}
+      <div
+        {...getRootProps()}
+        className={`dropzone ${isDragActive ? "active" : ""}`}
+      >
+        <input {...getInputProps()} />
+        <p>Drag 'n' drop a file here, or click to select one</p>
+      </div>
+
+      {/* Right Column - Tools and Options */}
+      <div className="space-y-6">
+        <div className="bg-white rounded-lg shadow p-6">
+          <h2 className="text-lg font-semibold mb-4">Tools</h2>
+          <div className="grid grid-cols-2 gap-4">
+            <button
+              onClick={handleRemoveBackground}
+              disabled={!selectedImage || isProcessing}
+              className={`flex items-center justify-center space-x-2 p-3 rounded-lg text-white
+                ${!selectedImage || isProcessing ? "bg-gray-300 cursor-not-allowed" : "bg-purple-600 hover:bg-purple-700"}`}
             >
-              <input {...getInputProps()} />
-              <Upload className="mx-auto h-12 w-12 text-gray-400" />
-              <p className="mt-2 text-sm text-gray-600">
-                Drag & drop an image here, or click to select
-              </p>
-              <p className="text-xs text-gray-500 mt-1">
-                Supports PNG, JPG (up to 10MB)
-              </p>
-            </div>
-
-            {selectedImage && (
-              <div className="relative rounded-lg overflow-hidden bg-white shadow">
-                <img
-                  src={selectedImage}
-                  alt="Preview"
-                  className="w-full h-auto"
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Right Column - Tools and Options */}
-          <div className="space-y-6">
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-lg font-semibold mb-4">Tools</h2>
-              <div className="grid grid-cols-2 gap-4">
-                <button
-                  onClick={handleRemoveBackground}
-                  disabled={!selectedImage || isProcessing}
-                  className={`flex items-center justify-center space-x-2 p-3 rounded-lg text-white
-                    ${!selectedImage || isProcessing
-                      ? 'bg-gray-300 cursor-not-allowed'
-                      : 'bg-purple-600 hover:bg-purple-700'}`}
-                >
-                  <Wand2 className="h-5 w-5" />
-                  <span>{isProcessing ? 'Processing...' : 'Remove Background'}</span>
-                </button>
-                <button
-                  disabled={!selectedImage}
-                  className={`flex items-center justify-center space-x-2 p-3 rounded-lg
-                    ${!selectedImage
-                      ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                      : 'bg-white border-2 border-purple-600 text-purple-600 hover:bg-purple-50'}`}
-                >
-                  <Download className="h-5 w-5" />
-                  <span>Download</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg shadow p-6">
-              <h2 className="text-lg font-semibold mb-4">Options</h2>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <ImageIcon className="h-5 w-5 text-gray-500" />
-                    <span>Output Format</span>
-                  </div>
-                  <select className="border rounded-md px-3 py-1">
-                    <option>PNG</option>
-                    <option>JPG</option>
-                  </select>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <Layers className="h-5 w-5 text-gray-500" />
-                    <span>Quality</span>
-                  </div>
-                  <select className="border rounded-md px-3 py-1">
-                    <option>Original</option>
-                    <option>High</option>
-                    <option>Medium</option>
-                  </select>
-                </div>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <Settings2 className="h-5 w-5 text-gray-500" />
-                    <span>Advanced Settings</span>
-                  </div>
-                  <button className="text-purple-600 hover:text-purple-700">
-                    Configure
-                  </button>
-                </div>
-              </div>
-            </div>
+              <Wand2 className="h-5 w-5" />
+              <span>
+                {isProcessing ? "Processing..." : "Remove Background"}
+              </span>
+            </button>
+            <button
+              disabled={!selectedImage}
+              className={`flex items-center justify-center space-x-2 p-3 rounded-lg
+                ${!selectedImage ? "bg-gray-300 text-gray-500 cursor-not-allowed" : "bg-white border-2 border-purple-600 text-purple-600 hover:bg-purple-50"}`}
+            >
+              <Download className="h-5 w-5" />
+              <span>Download</span>
+            </button>
           </div>
         </div>
-      </main>
-
-      {/* Footer */}
-      <footer className="bg-white border-t mt-12">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900 tracking-wider uppercase">
-                Features
-              </h3>
-              <ul className="mt-4 space-y-2">
-                <li>
-                  <a href="#" className="text-gray-600 hover:text-gray-900">
-                    Background Removal
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="text-gray-600 hover:text-gray-900">
-                    Batch Processing
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="text-gray-600 hover:text-gray-900">
-                    API Access
-                  </a>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900 tracking-wider uppercase">
-                Resources
-              </h3>
-              <ul className="mt-4 space-y-2">
-                <li>
-                  <a href="#" className="text-gray-600 hover:text-gray-900">
-                    Documentation
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="text-gray-600 hover:text-gray-900">
-                    Tutorials
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="text-gray-600 hover:text-gray-900">
-                    Blog
-                  </a>
-                </li>
-              </ul>
-            </div>
-            <div>
-              <h3 className="text-sm font-semibold text-gray-900 tracking-wider uppercase">
-                Company
-              </h3>
-              <ul className="mt-4 space-y-2">
-                <li>
-                  <a href="#" className="text-gray-600 hover:text-gray-900">
-                    About
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="text-gray-600 hover:text-gray-900">
-                    Contact
-                  </a>
-                </li>
-                <li>
-                  <a href="#" className="text-gray-600 hover:text-gray-900">
-                    Privacy Policy
-                  </a>
-                </li>
-              </ul>
-            </div>
-          </div>
-        </div>
-      </footer>
+      </div>
     </div>
   );
 }
